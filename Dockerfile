@@ -62,7 +62,7 @@ USER appuser
 EXPOSE 7860
 
 ############################################
-# Run application
+# Run application (HTTP on 7860 — required for Hugging Face Docker Spaces)
 ############################################
-CMD ["python", "inference.py"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860"]
 

@@ -1,3 +1,21 @@
+---
+title: City Pothole Repair Scheduler
+emoji: 🚧
+colorFrom: gray
+colorTo: blue
+sdk: docker
+app_port: 7860
+short_description: OpenEnv scheduling — repair crews, budget, weather & traffic for city potholes.
+tags:
+  - openenv
+  - scheduling
+  - urban-planning
+  - resource-optimization
+  - fastapi
+  - pydantic
+fullWidth: true
+---
+
 # 🚧 City Pothole Repair Scheduler — OpenEnv
 
 An OpenEnv-compliant environment where an AI agent schedules road repair crews
@@ -153,9 +171,5 @@ pothole-repair-env/
 ├── openenv.yaml     Environment metadata
 ├── Dockerfile       Container config
 ├── requirements.txt Python dependencies
-└── README.md        This file
+└── README.md        This file (includes Hugging Face Spaces YAML config)
 ```
-# pothole-repair-env
-# pothole-repair-env
-# pothole-repair-env
-# pothole-repair-env
