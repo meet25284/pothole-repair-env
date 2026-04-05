@@ -77,6 +77,21 @@ def health():
         "version": "1.0.0",
     }
 
+@app.get("/reset")
+def reset():
+    """
+    Reset environment to a fresh episode.
+    Returns initial Observation.
+    """
+    try:
+        app_state.env = PotholeRepairEnv()
+        obs = app_state.env.reset()
+        return obs.model_dump()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Reset failed: {e}")
+
 
 @app.post("/reset")
 def reset(request: ResetRequest = ResetRequest()):
