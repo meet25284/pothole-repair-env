@@ -1,4 +1,4 @@
-name: city-pothole-repair-scheduler
+name: pothole-repair-env
 version: "1.0.0"
 description: >
   A real-world OpenEnv environment where an AI agent schedules road repair
@@ -6,7 +6,7 @@ description: >
   budget constraints, crew availability, and weather windows to maximize
   public road safety.
 
-author: your-username
+author: meet25284
 tags:
   - openenv
   - urban
