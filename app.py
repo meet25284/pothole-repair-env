@@ -68,7 +68,7 @@ class ResetRequest(BaseModel):
 # Endpoints
 # ─────────────────────────────────────────────
 
-@app.get("/health")
+@app.get("/")
 def health():
     """Health check — judges ping this first."""
     return {
