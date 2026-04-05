@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environment
+.venv/
+venv/
+
+# Environment variables
+.env
+.env.*
+
+# Docker
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# DO NOT ignore example file
+!.env.example

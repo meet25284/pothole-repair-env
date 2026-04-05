@@ -1,0 +1,123 @@
+name: city-pothole-repair-scheduler
+version: "1.0.0"
+description: >
+  A real-world OpenEnv environment where an AI agent schedules road repair
+  crews across a city. The agent must balance pothole severity, traffic impact,
+  budget constraints, crew availability, and weather windows to maximize
+  public road safety.
+
+author: your-username
+tags:
+  - openenv
+  - urban
+  - scheduling
+  - real-world
+  - city-management
+  - resource-optimization
+
+environment:
+  class: PotholeRepairEnv
+  module: env
+
+observation_space:
+  type: structured
+  fields:
+    potholes:
+      type: list[PotholeReport]
+      description: All potholes with id, severity, location, road_type, traffic, cost, status
+    budget_remaining:
+      type: float
+      description: Remaining repair budget in INR
+    initial_budget:
+      type: float
+      description: Starting budget for the episode
+    crews_available:
+      type: int
+      description: Number of repair crews available per day
+    day:
+      type: int
+      description: Current simulation day (1-indexed)
+    max_days:
+      type: int
+      description: Maximum days in this episode
+    weather:
+      type: WeatherWindow
+      description: Today's weather including rain flag and temperature
+    total_fixed:
+      type: int
+      description: Number of potholes fixed so far
+    total_pending:
+      type: int
+      description: Number of potholes still pending
+
+action_space:
+  type: discrete
+  actions:
+    dispatch:
+      description: Send repair crew to fix pothole today
+      args: [pothole_id]
+    defer:
+      description: Postpone repair to a future day
+      args: [pothole_id, defer_days]
+    mark_low_priority:
+      description: Mark pothole as low priority, skip this episode
+      args: [pothole_id]
+
+reward:
+  type: continuous
+  range: [-1.0, 1.0]
+  description: >
+    Partial progress signal throughout episode.
+    +reward for fixing high-severity, high-traffic potholes.
+    -penalty for dispatching on rainy days, budget overrun,
+    deferring critical potholes, or marking critical as low priority.
+
+tasks:
+  - name: critical_repair
+    difficulty: easy
+    max_steps: 30
+    initial_budget: 50000
+    crews: 3
+    num_potholes: 15
+    success_threshold: 0.8
+    grader: grader_easy
+    description: Fix all severity 4-5 potholes within 30 days
+
+  - name: budget_optimizer
+    difficulty: medium
+    max_steps: 30
+    initial_budget: 20000
+    crews: 2
+    num_potholes: 25
+    success_threshold: 0.6
+    grader: grader_medium
+    description: Maximize repairs within tight budget in 30 days
+
+  - name: full_city_manager
+    difficulty: hard
+    max_steps: 45
+    initial_budget: 30000
+    crews: 2
+    num_potholes: 30
+    success_threshold: 0.5
+    grader: grader_hard
+    description: Balance severity, budget, weather, and traffic over 45 days
+
+endpoints:
+  reset:
+    method: POST
+    path: /reset
+    body: '{"task_name": "critical_repair"}'
+  step:
+    method: POST
+    path: /step
+    body: '{"action_type": "dispatch", "pothole_id": "POT_001", "defer_days": 1}'
+  state:
+    method: GET
+    path: /state
+  health:
+    method: GET
+    path: /health
+  tasks:
+    method: GET
+    path: /tasks
