@@ -5,7 +5,7 @@ colorFrom: gray
 colorTo: blue
 sdk: docker
 app_port: 7860
-short_description: OpenEnv scheduling — repair crews, budget, weather & traffic for city potholes.
+short_description: OpenEnv pothole repair — budget, crews, weather & traffic.
 tags:
   - openenv
   - scheduling
