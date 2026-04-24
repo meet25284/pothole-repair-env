@@ -7,23 +7,7 @@ from __future__ import annotations
 import copy
 from typing import List, Optional, Dict, Any
 
-try:
-    from env import Env
-except ModuleNotFoundError:
-    # Fallback for runtime environments where openenv package is unavailable.
-    class Env:
-        def __init__(
-            self,
-            name: str = "Env",
-            state_space: Optional[dict] = None,
-            action_space: Optional[dict] = None,
-            episode_max_length: int = 300,
-        ):
-            self.name = name
-            self.state_space = state_space
-            self.action_space = action_space
-            self.episode_max_length = episode_max_length
-
+from openenv.env import Env
 from models import (
     PotholeReport, PotholeStatus, WeatherWindow,
     Observation, Action, ActionType, StepResult, TaskConfig,
