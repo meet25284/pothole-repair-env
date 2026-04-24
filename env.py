@@ -7,6 +7,7 @@ from __future__ import annotations
 import copy
 from typing import List, Optional, Dict, Any
 
+from openenv.env import Env
 from models import (
     PotholeReport, PotholeStatus, WeatherWindow,
     Observation, Action, ActionType, StepResult, TaskConfig,
@@ -15,7 +16,7 @@ from data_gen import generate_potholes, generate_weather, get_traffic_factor
 from tasks import get_task, GRADER_MAP
 
 
-class PotholeRepairEnv:
+class PotholeRepairEnv(Env):
     """
     City Pothole Repair Scheduler — OpenEnv compliant environment.
 
@@ -33,17 +34,57 @@ class PotholeRepairEnv:
         self.task_name = task_name
         self.task: TaskConfig = get_task(task_name)
 
+        state_space = {
+            "potholes": "list of PotholeReport objects",
+            "budget_remaining": "float",
+            "initial_budget": "float",
+            "crews_available": "int",
+            "day": "int",
+            "max_days": "int",
+            "weather": "WeatherWindow object",
+            "total_fixed": "int",
+            "total_pending": "int",
+        }
+        action_space = {
+            "action_type": "dispatch | defer | mark_low_priority",
+            "pothole_id": "str — e.g. POT_001",
+            "defer_days": "int 1-7 (only for defer action)",
+        }
+        super().__init__(
+            name="CivicMind-PotholeRepairEnv",
+            state_space=state_space,
+            action_space=action_space,
+            episode_max_length=self.task.max_days,
+        )
+
         # State — initialized properly on reset()
         self._potholes: List[PotholeReport] = []
         self._initial_potholes: List[PotholeReport] = []
         self._weather_schedule: List[WeatherWindow] = []
         self._actions_taken: List[Dict[str, Any]] = []
+        self._inspected_ids: set[str] = set()
 
         self._budget: float = 0.0
         self._day: int = 1
         self._done: bool = False
         self._episode_reward: float = 0.0
         self._initialized: bool = False
+
+    def reward(self, state, action) -> float:
+        """
+        OpenEnv reward wrapper.
+        state = current pothole (PotholeReport), action = Action object.
+        """
+        return self._compute_reward(state)
+
+    def print_info(self):
+        print(f"Environment : {self.name}")
+        print(f"Task        : {self.task_name}")
+        print(f"State space : {list(self.state_space.keys())}")
+        print(f"Action space: {list(self.action_space.keys())}")
+        print(f"Max days    : {self.task.max_days}")
+        print(f"Budget      : ₹{self.task.initial_budget:,.0f}")
+        print(f"Crews       : {self.task.crew_count}")
 
     # ─────────────────────────────────────────
     # reset()
@@ -68,6 +109,7 @@ class PotholeRepairEnv:
             seed=self.task.seed,
         )
         self._actions_taken = []
+        self._inspected_ids = set()
         self._budget = self.task.initial_budget
         self._day = 1
         self._done = False
@@ -281,13 +323,33 @@ class PotholeRepairEnv:
             return True
         return False
 
+    def reveal_severity(self, pothole_id: str) -> dict:
+        """
+        Reveal real severity for a pothole and mark it as inspected.
+        """
+        pothole = self._get_pothole(pothole_id)
+        if pothole is None:
+            return {"error": "not found", "revealed": False}
+
+        self._inspected_ids.add(pothole_id)
+        return {
+            "pothole_id": pothole.id,
+            "real_severity": pothole.severity,
+            "revealed": True,
+        }
+
     def _build_observation(self) -> Observation:
         weather = self._get_today_weather() or WeatherWindow(day=self._day)
         pending = sum(1 for p in self._potholes if p.status == PotholeStatus.PENDING)
         fixed   = sum(1 for p in self._potholes if p.status == PotholeStatus.FIXED)
+        visible_potholes = copy.deepcopy(self._potholes)
+
+        for pothole in visible_potholes:
+            if pothole.status == "pending" and pothole.id not in self._inspected_ids:
+                pothole.severity = 0
 
         return Observation(
-            potholes=copy.deepcopy(self._potholes),
+            potholes=visible_potholes,
             budget_remaining=round(self._budget, 2),
             initial_budget=self.task.initial_budget,
             crews_available=self.task.crew_count,
@@ -306,7 +368,13 @@ class PotholeRepairEnv:
 # ─────────────────────────────────────────────
 if __name__ == "__main__":
     env = PotholeRepairEnv(task_name="critical_repair")
+    env.print_info()
     obs = env.reset()
+
+    print(f"State space keys: {list(env.state_space.keys())}")
+    print(f"Action space    : {env.action_space}")
+    print(f"Episode max len : {env.episode_max_length}")
+    print()
 
     print(f"Task    : {env.task_name}")
     print(f"Day     : {obs.day}/{obs.max_days}")
