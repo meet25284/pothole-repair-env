@@ -1,4 +1,14 @@
-# CivicMind — Multi-Agent Urban Infrastructure Environment
+---
+title: CivicMind:Pothole Repair Env
+emoji: 🚧
+colorFrom: green
+colorTo: blue
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
+# CivicMind — Multi-Agent Pothole Repair Environment
 
 ## Problem
 Cities lose time, money, and public trust when potholes stay unresolved. Untreated potholes damage vehicles, slow ambulances, and increase crash risk, especially on busy roads.
