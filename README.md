@@ -72,8 +72,8 @@ Central Command
 **Theme 4:** Automatic task escalation increases difficulty when performance improves. This creates a self-improving loop.
 
 ## Links
-- HF Space: [URL]
-- Training Colab: [URL]
+- HF Space: https://huggingface.co/spaces/meet25284/pothole-repair-env
+- Training Colab: https://colab.research.google.com/drive/1l9ESInFrEGa3CRCmxsOZz7aCHWsUeYCQ?usp=sharing
 - Blog Post: [URL]
 - Demo Video: [URL]
 
