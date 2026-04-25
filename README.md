@@ -63,11 +63,11 @@ Central Command
 | `full_city_manager` | Hard | Balance weather, budget, urgency | `score >= 0.6` → `generated_city` |
 
 ## Results
-![Reward Curve](plots/reward_curve.png)  
-*Rewards improve and cross threshold.*
+![Reward Curve](plots/reward_curve.svg)  
+*Training vs baseline on the same axes; higher is better.*
 
-![Difficulty Progression](plots/difficulty.png)  
-*Difficulty increases as performance improves.*
+![Difficulty Progression](plots/difficulty.svg)  
+*Auto-escalation increases task difficulty as the agent improves (Theme 4).*
 
 | Behavior | Before Multi-Agent | After Multi-Agent |
 |---|---|---|
@@ -76,24 +76,7 @@ Central Command
 | Budget control | Reactive | Planned approvals with fallback |
 | Crew usage | First-come assignments | Severity-first scheduling |
 
-## Themes Covered
-**Theme 1:** CivicMind models a municipal workflow: detect, inspect, approve, and dispatch. It targets road safety and citizen service quality.  
-**Theme 3.1:** Agents use tools (inspection, budget, risk, scheduling) before deciding. Decisions are grounded in environment data.  
-**Theme 4:** Automatic task escalation increases difficulty when performance improves. This creates a self-improving loop.
-
-## Links
-- HF Space: https://huggingface.co/spaces/meet25284/pothole-repair-env
-- Training Colab: https://colab.research.google.com/drive/1l9ESInFrEGa3CRCmxsOZz7aCHWsUeYCQ?usp=sharing
-- Blog Post: [URL]
-- Demo Video: [URL]
-
-## Quick Start
-```bash
-pip install -r requirements.txt
-uvicorn app:app --host 0.0.0.0 --port 7860 --reload
-python inference.py
-```
-
+---
 ## API Endpoints
 | Method | Endpoint | Purpose |
 |---|---|---|
@@ -109,3 +92,60 @@ python inference.py
 | `GET` | `/escalate` | Get next task by score |
 | `GET` | `/score` | Current grader score |
 | `GET` | `/tasks` | List available tasks |
+---
+
+## Themes Covered
+**Theme 1:** CivicMind models a municipal workflow: detect, inspect, approve, and dispatch. It targets road safety and citizen service quality.  
+**Theme 3.1:** Agents use tools (inspection, budget, risk, scheduling) before deciding. Decisions are grounded in environment data.  
+**Theme 4:** Automatic task escalation increases difficulty when performance improves. This creates a self-improving loop.
+
+## Links
+- HF Space: https://huggingface.co/spaces/meet25284/pothole-repair-env
+- Training Colab: https://colab.research.google.com/drive/1l9ESInFrEGa3CRCmxsOZz7aCHWsUeYCQ?usp=sharing
+- Demo Video: [URL]
+
+---
+## Setup Instructions
+
+### 1. Clone and install
+
+```bash
+git clone https://github.com/meet25284/pothole-repair-env.git
+cd pothole-repair-env
+python -m venv venv
+source venv/bin/activate   # Windows: venv\Scripts\activate
+pip install --only-binary=:all: -r requirements.txt
+```
+
+### 2. Set environment variables
+
+```bash
+cp .env.example .env
+# Edit .env with your HF_TOKEN and MODEL_NAME
+```
+
+### 3. Run the server locally
+
+```bash
+uvicorn app:app --host 0.0.0.0 --port 7860 --reload
+```
+
+### 4. Test endpoints
+
+open http://localhost:7860/docs
+
+### 5. Run baseline inference
+
+```bash
+python inference.py
+```
+
+### 6. Docker
+
+```bash
+docker build -t pothole-repair-env .
+docker run -p 7860:7860 --env-file .env pothole-repair-env
+```
+
+---
+

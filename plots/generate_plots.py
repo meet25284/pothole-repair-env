@@ -33,7 +33,7 @@ def simulate_training_data(episodes: int = 300, seed: int = 42):
     return episode_ids, baseline_rewards, trained_rewards
 
 
-def plot_reward_curve(save_path: str = "plots/reward_curve.png"):
+def plot_reward_curve(save_path: str = "plots/reward_curve.svg"):
     """
     Plot baseline and trained reward curves and save as PNG.
     """
@@ -84,13 +84,13 @@ def plot_reward_curve(save_path: str = "plots/reward_curve.png"):
     plt.legend()
     plt.grid(alpha=0.3)
     plt.tight_layout()
-    plt.savefig(save_path, dpi=160)
+    plt.savefig(save_path)
     plt.close()
 
     print(f"Saved reward curve to {save_path}")
 
 
-def plot_difficulty_progression(save_path: str = "plots/difficulty.png"):
+def plot_difficulty_progression(save_path: str = "plots/difficulty.svg"):
     """
     Plot auto-difficulty escalation stages across episodes.
     """
@@ -123,7 +123,7 @@ def plot_difficulty_progression(save_path: str = "plots/difficulty.png"):
     plt.title("CivicMind — Auto-Difficulty Escalation (Theme 4)")
     plt.grid(alpha=0.25)
     plt.tight_layout()
-    plt.savefig(save_path, dpi=160)
+    plt.savefig(save_path)
     plt.close()
 
     print(f"Saved difficulty progression to {save_path}")
@@ -136,6 +136,6 @@ if __name__ == "__main__":
     with open(metadata_path, "w", encoding="utf-8") as handle:
         json.dump({"generator": "simulate_training_data", "episodes": 300, "seed": 42}, handle)
 
-    plot_reward_curve()
-    plot_difficulty_progression()
+    plot_reward_curve(save_path="plots/reward_curve.svg")
+    plot_difficulty_progression(save_path="plots/difficulty.svg")
     print("All plots saved to plots/ folder")
