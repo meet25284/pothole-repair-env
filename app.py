@@ -5,6 +5,8 @@ Serves the OpenEnv environment via REST API on port 7860 (HuggingFace default).
 
 from __future__ import annotations
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+import random
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
@@ -13,7 +15,7 @@ from pydantic import BaseModel
 
 from env import PotholeRepairEnv
 from models import Action
-from tasks import list_tasks
+from tasks import get_next_task, list_tasks
 
 
 # ─────────────────────────────────────────────
@@ -22,6 +24,7 @@ from tasks import list_tasks
 
 class AppState:
     env: Optional[PotholeRepairEnv] = None
+    score_history: list[dict] = []
 
 
 app_state = AppState()
@@ -62,6 +65,14 @@ app.add_middleware(
 
 class ResetRequest(BaseModel):
     task_name: str = "critical_repair"
+
+class InspectRequest(BaseModel):
+    pothole_id: str
+
+class RecordScoreRequest(BaseModel):
+    task: str
+    score: float
+    steps: int
 
 
 # ─────────────────────────────────────────────
@@ -137,6 +148,118 @@ def state():
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@app.post("/inspect")
+def inspect(request: InspectRequest):
+    """Reveal real severity for a specific pothole via inspection."""
+    if app_state.env is None:
+        raise HTTPException(status_code=400, detail="Call /reset first")
+    try:
+        result = app_state.env.reveal_severity(request.pothole_id)
+        if result.get("revealed"):
+            return result
+        raise HTTPException(status_code=404, detail=result.get("error", "not found"))
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Inspect failed: {e}")
+
+@app.get("/complaints")
+def complaints():
+    """Return simulated citizen complaints from current visible pothole state."""
+    if app_state.env is None:
+        raise HTTPException(status_code=400, detail="Call /reset first")
+    try:
+        obs = app_state.env.state()
+        potholes = obs.potholes
+        if not potholes:
+            return {"complaints": []}
+
+        count = random.randint(5, 10)
+        complaint_items = []
+        templates = {
+            "HIGH": [
+                "Large dangerous pothole causing near misses.",
+                "Severe road damage; vehicles swerving suddenly.",
+                "Critical pothole creating accident risk in traffic.",
+            ],
+            "MEDIUM": [
+                "Road damage worsening and affecting ride quality.",
+                "Frequent bumps reported on this road section.",
+                "Pothole causing congestion during peak traffic.",
+            ],
+            "LOW": [
+                "Minor pothole reported by local residents.",
+                "Small road surface crack becoming noticeable.",
+                "Light damage observed; may worsen if ignored.",
+            ],
+        }
+
+        for idx in range(count):
+            pothole = random.choice(potholes)
+            severity = pothole.severity
+            if severity >= 4:
+                urgency = "HIGH"
+            elif severity >= 2:
+                urgency = "MEDIUM"
+            else:
+                urgency = "LOW"
+
+            complaint_items.append(
+                {
+                    "complaint_id": f"CMP_{idx + 1:03d}",
+                    "pothole_id": pothole.id,
+                    "reported_by": "Citizen",
+                    "description": random.choice(templates[urgency]),
+                    "urgency": urgency,
+                    "reported_on_day": random.randint(1, max(1, obs.day)),
+                }
+            )
+
+        return {"complaints": complaint_items}
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Complaints failed: {e}")
+
+
+@app.get("/leaderboard")
+def leaderboard():
+    """Return top score history entries (latest 20 by score)."""
+    sorted_history = sorted(
+        app_state.score_history,
+        key=lambda entry: entry.get("score", 0.0),
+        reverse=True,
+    )
+    return {"leaderboard": sorted_history[:20]}
+
+
+@app.post("/record_score")
+def record_score(request: RecordScoreRequest):
+    """Record episode score for leaderboard tracking."""
+    app_state.score_history.append(
+        {
+            "task": request.task,
+            "score": request.score,
+            "steps": request.steps,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    return {"recorded": True}
+
+
+@app.get("/escalate")
+def escalate(task: str, score: float):
+    """Return next task based on score-driven auto-escalation rules."""
+    next_task = get_next_task(task, score)
+    return {
+        "current_task": task,
+        "score": score,
+        "next_task": next_task,
+        "escalated": next_task != task,
+    }
+
 
 @app.get("/score")
 def score():
@@ -154,6 +277,10 @@ def tasks():
     """Return all available tasks with descriptions."""
     return {"tasks": list_tasks()}
 
+# Add this endpoint — Colab pings it to keep Space awake
+@app.get("/ping")
+def ping():
+    return {"pong": True}
 
 # ─────────────────────────────────────────────
 # Entry point

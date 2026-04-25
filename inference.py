@@ -14,15 +14,18 @@ Environment variables required:
 
 from __future__ import annotations
 import asyncio
+import json
 import os
 import textwrap
+from urllib import request as urlrequest
 from typing import List, Optional
 
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from agents.central_agent import CentralAgent
 from env import PotholeRepairEnv
-from models import Action, ActionType, Observation
+from models import Action, ActionType, Observation, PotholeStatus
 
 # ─────────────────────────────────────────────
 # Config — read from environment variables
@@ -210,7 +213,13 @@ async def run_task(client: OpenAI, task_name: str) -> float:
     Returns final score in [0.0, 1.0].
     """
     env = PotholeRepairEnv(task_name=task_name)
+    client = OpenAI(
+        base_url=API_BASE_URL,
+        api_key=API_KEY or _DUMMY_API_KEY,
+    )
+    central = CentralAgent(client)
     rewards: List[float] = []
+    actions_taken: List[dict] = []
     steps_taken = 0
     score = 0.0
     success = False
@@ -221,11 +230,15 @@ async def run_task(client: OpenAI, task_name: str) -> float:
         obs = env.reset(task_name=task_name)
 
         for step in range(1, MAX_STEPS_PER_TASK + 1):
-            if not [p for p in obs.potholes if p.status == "pending"]:
+            if not [
+                p
+                for p in obs.potholes
+                if p.status == PotholeStatus.PENDING or str(p.status) == "pending"
+            ]:
                 # No more pending potholes — done
                 break
 
-            raw_action, action = get_agent_action(client, obs, step)
+            action, consultation_log = await central.decide(obs, actions_taken, env=env)
             result = env.step(action)
 
             reward = result.reward or 0.0
@@ -234,9 +247,39 @@ async def run_task(client: OpenAI, task_name: str) -> float:
 
             rewards.append(reward)
             steps_taken = step
+            cost = 0.0
+            if isinstance(result.info, dict):
+                try:
+                    cost = float(result.info.get("cost", 0.0))
+                except (TypeError, ValueError):
+                    cost = 0.0
+            actions_taken.append(
+                {
+                    "action_type": action.action_type,
+                    "pothole_id": action.pothole_id,
+                    "day": obs.day,
+                    "cost": cost,
+                }
+            )
             obs = result.observation
 
-            log_step(step=step, action=raw_action, reward=reward, done=done, error=error)
+            action_str = f"{action.action_type} {action.pothole_id}"
+            log_step(step=step, action=action_str, reward=reward, done=done, error=error)
+
+            inspector_urgent = consultation_log.get("inspector_report", {}).get("urgent_ids", [])
+            risk_safe = consultation_log.get("risk_report", {}).get("weather_safe", False)
+            budget_approved = consultation_log.get("budget_report", {}).get("approved_ids", [])
+            scheduler_assignments = consultation_log.get("scheduler_report", {}).get(
+                "actual_assignments", {}
+            )
+            first_crew = next(iter(scheduler_assignments.values()), "none")
+            print(
+                f"[DEBUG] Inspector=urgent:{len(inspector_urgent)} | "
+                f"Risk={'safe' if risk_safe else 'risky'} | "
+                f"Budget=approved:{len(budget_approved)} | "
+                f"Scheduler={first_crew}",
+                flush=True,
+            )
 
             if done:
                 break
@@ -255,6 +298,20 @@ async def run_task(client: OpenAI, task_name: str) -> float:
         except Exception:
             pass
         log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
+        try:
+            payload = json.dumps(
+                {"task": task_name, "score": score, "steps": steps_taken}
+            ).encode("utf-8")
+            req = urlrequest.Request(
+                "http://127.0.0.1:7860/record_score",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urlrequest.urlopen(req, timeout=2):
+                pass
+        except Exception as exc:
+            print(f"[DEBUG] record_score failed: {exc}", flush=True)
 
     return score
 
