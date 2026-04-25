@@ -1,3 +1,13 @@
+---
+title: CivicMind:Pothole Repair Env
+emoji: 🚧
+colorFrom: green
+colorTo: blue
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # CivicMind — Multi-Agent Urban Infrastructure Environment
 
 ## Problem
