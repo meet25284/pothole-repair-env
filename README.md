@@ -1,14 +1,4 @@
----
-title: CivicMind:Pothole Repair Env
-emoji: 🚧
-colorFrom: green
-colorTo: blue
-sdk: docker
-app_port: 7860
-pinned: false
----
-
-# CivicMind — Multi-Agent Pothole Repair Environment
+# CivicMind — Multi-Agent Urban Infrastructure Environment
 
 ## Problem
 Cities lose time, money, and public trust when potholes stay unresolved. Untreated potholes damage vehicles, slow ambulances, and increase crash risk, especially on busy roads.
@@ -82,8 +72,8 @@ Central Command
 **Theme 4:** Automatic task escalation increases difficulty when performance improves. This creates a self-improving loop.
 
 ## Links
-- HF Space: https://huggingface.co/spaces/meet25284/pothole-repair-env
-- Training Colab: https://colab.research.google.com/drive/1l9ESInFrEGa3CRCmxsOZz7aCHWsUeYCQ?usp=sharing
+- HF Space: [URL]
+- Training Colab: [URL]
 - Blog Post: [URL]
 - Demo Video: [URL]
 

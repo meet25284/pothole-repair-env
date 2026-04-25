@@ -22,188 +22,10 @@ from typing import List, Optional
 
 from dotenv import load_dotenv
 from openai import OpenAI
-from transformers import AutoModelForCausalLM, AutoTokenizer
-import torch
-import httpx
 
+from agents.central_agent import CentralAgent
 from env import PotholeRepairEnv
 from models import Action, ActionType, Observation, PotholeStatus
-
-
-def load_trained_model(model_path: str):
-    """
-    Load trained CivicMind model from HF Hub or local path.
-    Falls back to base model if trained model not found.
-    """
-    print(f"Loading model from {model_path}...")
-    try:
-        tokenizer = AutoTokenizer.from_pretrained(
-            model_path, trust_remote_code=True
-        )
-        tokenizer.pad_token = tokenizer.eos_token
-
-        model = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            torch_dtype=torch.float16 if torch.cuda.is_available()
-            else torch.float32,
-            device_map="auto" if torch.cuda.is_available()
-            else "cpu",
-            trust_remote_code=True
-        )
-        model.eval()
-        device = next(model.parameters()).device
-        print(f"✅ Trained model loaded on {device}")
-        return model, tokenizer
-
-    except Exception as e:
-        print(f"[WARN] Could not load {model_path}: {e}")
-        print("[WARN] Falling back to base model...")
-        base = "Qwen/Qwen2.5-0.5B-Instruct"
-        tokenizer = AutoTokenizer.from_pretrained(base)
-        tokenizer.pad_token = tokenizer.eos_token
-        model = AutoModelForCausalLM.from_pretrained(
-            base,
-            torch_dtype=torch.float32,
-            device_map="cpu"
-        )
-        model.eval()
-        return model, tokenizer
-
-
-def call_tool(space_url, endpoint, data) -> dict:
-    """
-    Makes HTTP call to tool endpoint on HF Space.
-    Returns response dict or empty dict on error.
-    """
-    try:
-        url = f"{space_url.rstrip('/')}{endpoint}"
-        with httpx.Client(timeout=15.0) as client:
-            if endpoint in {"/inspect", "/record_score"}:
-                response = client.post(url, json=data or {})
-            elif endpoint in {"/complaints", "/score"}:
-                response = client.get(url)
-            else:
-                return {}
-        response.raise_for_status()
-        payload = response.json()
-        return payload if isinstance(payload, dict) else {}
-    except Exception as exc:
-        print(f"[DEBUG] tool call failed {endpoint}: {exc}", flush=True)
-        return {}
-
-
-def get_trained_model_action(
-    model, tokenizer, obs: dict, task_name: str, inspect_result: Optional[dict] = None
-) -> tuple[str, str]:
-    """
-    Run trained model inference to get action.
-    Returns (action_type, pothole_id)
-    """
-    # Build prompt same as training
-    potholes = obs.get("potholes", [])
-    pending = [p for p in potholes
-               if p.get("status") == "pending"]
-    pending_sorted = sorted(
-        pending,
-        key=lambda p: (-p.get("severity", 0),
-                       -p.get("daily_traffic", 0))
-    )[:5]
-
-    # Fallback
-    fallback_id = pending[0].get("id") if pending else "POT_001"
-
-    weather = obs.get("weather", {})
-    rain = "RAINING - avoid dispatch!" \
-        if weather.get("is_raining") else "Clear"
-
-    lines = []
-    for p in pending_sorted:
-        sev = p.get("severity", 0)
-        sev_str = "UNKNOWN" if sev == 0 else str(sev)
-        lines.append(
-            f"  {p.get('id')} | sev={sev_str} | "
-            f"{p.get('road_type')} | "
-            f"traffic={p.get('daily_traffic',0):,} | "
-            f"cost=Rs{p.get('repair_cost',0):.0f}"
-        )
-
-    pothole_block = "\n".join(lines) if lines else "None pending"
-
-    prompt = f"""You are a city road repair agent.
-Task: {task_name}
-Day: {obs.get('day',1)} of {obs.get('max_days',30)}
-Budget: Rs{obs.get('budget_remaining',0):,.0f}
-Crews: {obs.get('crews_available',0)}
-Weather: {rain}
-Fixed: {obs.get('total_fixed',0)} | Pending: {obs.get('total_pending',0)}
-
-Top pending potholes:
-{pothole_block}
-
-Choose ONE action. Reply with EXACTLY:
-dispatch POT_001
-or defer POT_001
-or mark_low POT_001
-
-Your action:"""
-    if inspect_result:
-        prompt += (
-            "\nInspector says: "
-            f"severity={inspect_result.get('real_severity', 'unknown')}, "
-            f"recommendation={inspect_result.get('recommendation', 'n/a')}"
-        )
-
-    try:
-        device = next(model.parameters()).device
-        inputs = tokenizer(
-            prompt,
-            return_tensors="pt",
-            truncation=True,
-            max_length=512
-        ).to(device)
-
-        with torch.no_grad():
-            outputs = model.generate(
-                **inputs,
-                max_new_tokens=20,
-                temperature=0.3,
-                do_sample=True,
-                pad_token_id=tokenizer.eos_token_id,
-            )
-
-        new_tokens = outputs[0][inputs["input_ids"].shape[1]:]
-        response = tokenizer.decode(
-            new_tokens, skip_special_tokens=True
-        ).strip()
-
-        print(f"[DEBUG] Model said: {repr(response)}")
-
-        # Parse response
-        text = response.strip().lower().split("\n")[0]
-        parts = text.split()
-        if len(parts) < 2:
-            return "defer", fallback_id
-
-        verb = parts[0]
-        pot_id = parts[1].upper()
-
-        valid = {
-            "dispatch": "dispatch",
-            "defer": "defer",
-            "mark_low": "mark_low_priority",
-            "mark_low_priority": "mark_low_priority"
-        }
-        action_type = valid.get(verb, "defer")
-
-        all_ids = [p.get("id") for p in potholes]
-        if pot_id not in all_ids:
-            pot_id = fallback_id
-
-        return action_type, pot_id
-
-    except Exception as e:
-        print(f"[DEBUG] Model inference failed: {e}")
-        return "defer", fallback_id
 
 # ─────────────────────────────────────────────
 # Config — read from environment variables
@@ -222,10 +44,7 @@ API_KEY = _API_KEY_RAW.strip() or None
 API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
 MODEL_NAME = os.getenv("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
 BENCHMARK = "pothole-repair-env"
-BASE_URL = os.getenv(
-    "HF_SPACE_URL",
-    "https://meet25284-pothole-repair-env.hf.space"
-)
+
 # OpenAI client requires a non-empty string; real calls still fail gracefully in get_agent_action.
 _DUMMY_API_KEY = "local-missing-key"
 
@@ -387,13 +206,18 @@ def parse_action(raw: str, fallback_id: str) -> Action:
 # Single task runner
 # ─────────────────────────────────────────────
 
-async def run_task(client, task_name, model, tokenizer) -> float:
+async def run_task(client: OpenAI, task_name: str) -> float:
     """
     Run one full episode of a task.
     Prints [START], [STEP]×n, [END] logs.
     Returns final score in [0.0, 1.0].
     """
     env = PotholeRepairEnv(task_name=task_name)
+    client = OpenAI(
+        base_url=API_BASE_URL,
+        api_key=API_KEY or _DUMMY_API_KEY,
+    )
+    central = CentralAgent(client)
     rewards: List[float] = []
     actions_taken: List[dict] = []
     steps_taken = 0
@@ -414,27 +238,8 @@ async def run_task(client, task_name, model, tokenizer) -> float:
                 # No more pending potholes — done
                 break
 
-            # Step 1 — inspect top pending pothole before deciding.
-            pending = [p for p in obs.potholes if p.status == "pending"]
-            inspect_result: dict = {}
-            if pending:
-                top_pothole = sorted(pending, key=lambda p: -p.severity)[0]
-                inspect_result = call_tool(
-                    BASE_URL, "/inspect", {"pothole_id": top_pothole.id}
-                )
-                print(f"[TOOL] inspect → {inspect_result}", flush=True)
-
-            # Step 2 — pass enriched tool context to the model prompt.
-            action_type, pothole_id = get_trained_model_action(
-                model, tokenizer, obs.model_dump(), task_name, inspect_result
-            )
-            action = Action(action_type=action_type, pothole_id=pothole_id)
+            action, consultation_log = await central.decide(obs, actions_taken, env=env)
             result = env.step(action)
-
-            # Step 3 — query current score and attach to info.
-            current_score = call_tool(BASE_URL, "/score", {})
-            if isinstance(result.info, dict):
-                result.info["tool_score"] = current_score
 
             reward = result.reward or 0.0
             done   = result.done
@@ -458,9 +263,23 @@ async def run_task(client, task_name, model, tokenizer) -> float:
             )
             obs = result.observation
 
-            raw_action = f"{action_type} {pothole_id}"
-            action_str = raw_action
+            action_str = f"{action.action_type} {action.pothole_id}"
             log_step(step=step, action=action_str, reward=reward, done=done, error=error)
+
+            inspector_urgent = consultation_log.get("inspector_report", {}).get("urgent_ids", [])
+            risk_safe = consultation_log.get("risk_report", {}).get("weather_safe", False)
+            budget_approved = consultation_log.get("budget_report", {}).get("approved_ids", [])
+            scheduler_assignments = consultation_log.get("scheduler_report", {}).get(
+                "actual_assignments", {}
+            )
+            first_crew = next(iter(scheduler_assignments.values()), "none")
+            print(
+                f"[DEBUG] Inspector=urgent:{len(inspector_urgent)} | "
+                f"Risk={'safe' if risk_safe else 'risky'} | "
+                f"Budget=approved:{len(budget_approved)} | "
+                f"Scheduler={first_crew}",
+                flush=True,
+            )
 
             if done:
                 break
@@ -479,13 +298,20 @@ async def run_task(client, task_name, model, tokenizer) -> float:
         except Exception:
             pass
         log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
-        record_result = call_tool(
-            BASE_URL,
-            "/record_score",
-            {"task": task_name, "score": score, "steps": steps_taken},
-        )
-        if not record_result.get("recorded"):
-            print(f"[DEBUG] record_score failed: {record_result}", flush=True)
+        try:
+            payload = json.dumps(
+                {"task": task_name, "score": score, "steps": steps_taken}
+            ).encode("utf-8")
+            req = urlrequest.Request(
+                "http://127.0.0.1:7860/record_score",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urlrequest.urlopen(req, timeout=2):
+                pass
+        except Exception as exc:
+            print(f"[DEBUG] record_score failed: {exc}", flush=True)
 
     return score
 
@@ -495,12 +321,6 @@ async def run_task(client, task_name, model, tokenizer) -> float:
 # ─────────────────────────────────────────────
 
 async def main() -> None:
-    TRAINED_MODEL_PATH = os.getenv(
-        "TRAINED_MODEL_PATH",
-        "meet25284/civicmind-agent"
-    )
-    model, tokenizer = load_trained_model(TRAINED_MODEL_PATH)
-
     if not API_KEY:
         print(
             "[WARN] No HF_TOKEN / GROQ_API_KEY / OPENAI_API_KEY in environment; "
@@ -518,7 +338,7 @@ async def main() -> None:
 
     all_scores = {}
     for task_name in TASKS:
-        score = await run_task(client, task_name, model, tokenizer)
+        score = await run_task(client, task_name)
         all_scores[task_name] = score
         print("─" * 60, flush=True)
 
