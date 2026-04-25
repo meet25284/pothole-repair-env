@@ -28,6 +28,7 @@ import httpx
 
 from env import PotholeRepairEnv
 from models import Action, ActionType, Observation, PotholeStatus
+from tools.inspection_tools import inspect_pothole
 
 
 def load_trained_model(model_path: str):
@@ -87,6 +88,12 @@ def call_tool(space_url, endpoint, data) -> dict:
         response.raise_for_status()
         payload = response.json()
         return payload if isinstance(payload, dict) else {}
+    except httpx.HTTPStatusError as exc:
+        # If the Space is not yet deployed with a tool route, don't spam logs.
+        if exc.response is not None and exc.response.status_code == 404:
+            return {}
+        print(f"[DEBUG] tool call failed {endpoint}: {exc}", flush=True)
+        return {}
     except Exception as exc:
         print(f"[DEBUG] tool call failed {endpoint}: {exc}", flush=True)
         return {}
@@ -422,6 +429,20 @@ async def run_task(client, task_name, model, tokenizer) -> float:
                 inspect_result = call_tool(
                     BASE_URL, "/inspect", {"pothole_id": top_pothole.id}
                 )
+                # If Space endpoint is missing (404) or unreachable, fall back to local env tools.
+                if not inspect_result:
+                    try:
+                        reveal = env.reveal_severity(top_pothole.id)
+                        current_potholes = env.state().potholes
+                        inspected = inspect_pothole(top_pothole.id, current_potholes)
+                        inspect_result = {
+                            "pothole_id": top_pothole.id,
+                            "real_severity": reveal.get("real_severity"),
+                            "revealed": bool(reveal.get("revealed")),
+                            "recommendation": inspected.get("recommendation"),
+                        }
+                    except Exception as exc:
+                        print(f"[DEBUG] local inspect fallback failed: {exc}", flush=True)
                 print(f"[TOOL] inspect → {inspect_result}", flush=True)
 
             # Step 2 — pass enriched tool context to the model prompt.
