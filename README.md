@@ -76,10 +76,12 @@ Central Command
 
 ## Results
 
-Reward Curve  
+Reward Curve
+![Reward Curve](plots/reward_curve.svg)
 *Training vs baseline on the same axes; higher is better.*
 
 Difficulty Progression  
+![Difficulty Progression](plots/difficulty.svg)
 *Auto-escalation increases task difficulty as the agent improves (Theme 4).*
 
 
