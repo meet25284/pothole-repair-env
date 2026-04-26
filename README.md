@@ -126,7 +126,7 @@ Difficulty Progression
 
 - HF Space: [https://huggingface.co/spaces/meet25284/pothole-repair-env](https://huggingface.co/spaces/meet25284/pothole-repair-env)
 - Training Colab: [https://colab.research.google.com/drive/1l9ESInFrEGa3CRCmxsOZz7aCHWsUeYCQ?usp=sharing](https://colab.research.google.com/drive/1l9ESInFrEGa3CRCmxsOZz7aCHWsUeYCQ?usp=sharing)
-- Demo Video: [URL]
+- Demo Video: [https://youtu.be/lAAoA1XSZ7s](https://youtu.be/lAAoA1XSZ7s)
 - BLOG: [BLOG](/home/pansuriya-meet/pothole-repair-env/BLOG.md)
 
 ---
