@@ -139,7 +139,7 @@ Difficulty Progression
 git clone https://github.com/meet25284/pothole-repair-env.git
 cd pothole-repair-env
 python3.12 -m venv venv
-source venv/bin/activate   # Windows: venv\Scripts\activate
+source venv/bin/activate   # Windows: venv\Scripts\activate.bat
 pip install --only-binary=:all: -r requirements.txt
 ```
 

@@ -16,6 +16,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import random
+import re
+import warnings
 import textwrap
 from urllib import request as urlrequest
 from typing import List, Optional
@@ -37,30 +40,45 @@ def load_trained_model(model_path: str):
     Falls back to base model if trained model not found.
     """
     print(f"Loading model from {model_path}...")
+    base = "Qwen/Qwen2.5-0.5B-Instruct"
+    # Default to base tokenizer to avoid incompatibilities with uploaded tokenizer.json.
+    # Set PREFER_REPO_TOKENIZER=1 if you want to force using the repo tokenizer.
+    prefer_repo_tokenizer = os.getenv("PREFER_REPO_TOKENIZER", "0").strip() == "1"
     try:
-        tokenizer = AutoTokenizer.from_pretrained(
-            model_path, trust_remote_code=True
-        )
-        tokenizer.pad_token = tokenizer.eos_token
-
+        # 1) Load weights from the trained repo/path.
         model = AutoModelForCausalLM.from_pretrained(
             model_path,
-            torch_dtype=torch.float16 if torch.cuda.is_available()
-            else torch.float32,
-            device_map="auto" if torch.cuda.is_available()
-            else "cpu",
-            trust_remote_code=True
+            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+            device_map="auto" if torch.cuda.is_available() else "cpu",
+            trust_remote_code=True,
         )
         model.eval()
         device = next(model.parameters()).device
-        print(f"✅ Trained model loaded on {device}")
+
+        # 2) Load tokenizer.
+        # Your HF repo currently has a tokenizer.json that tokenizers can't parse,
+        # so by default we use the known-good base tokenizer (same vocab family).
+        if prefer_repo_tokenizer:
+            try:
+                tokenizer = AutoTokenizer.from_pretrained(
+                    model_path, trust_remote_code=True
+                )
+            except Exception as tok_exc:
+                print(f"[WARN] Tokenizer load failed for {model_path}: {tok_exc}")
+                print(f"[WARN] Falling back to base tokenizer: {base}")
+                tokenizer = AutoTokenizer.from_pretrained(base, trust_remote_code=True)
+        else:
+            tokenizer = AutoTokenizer.from_pretrained(base, trust_remote_code=True)
+
+        tokenizer.pad_token = tokenizer.eos_token
+
+        print(f"✅ Trained weights loaded on {device}")
         return model, tokenizer
 
     except Exception as e:
         print(f"[WARN] Could not load {model_path}: {e}")
         print("[WARN] Falling back to base model...")
-        base = "Qwen/Qwen2.5-0.5B-Instruct"
-        tokenizer = AutoTokenizer.from_pretrained(base)
+        tokenizer = AutoTokenizer.from_pretrained(base, trust_remote_code=True)
         tokenizer.pad_token = tokenizer.eos_token
         model = AutoModelForCausalLM.from_pretrained(
             base,
@@ -117,7 +135,7 @@ def get_trained_model_action(
     )[:5]
 
     # Fallback
-    fallback_id = pending[0].get("id") if pending else "POT_001"
+    fallback_id = pending_sorted[0].get("id") if pending_sorted else (pending[0].get("id") if pending else "POT_001")
 
     weather = obs.get("weather", {})
     rain = "RAINING - avoid dispatch!" \
@@ -185,14 +203,14 @@ Your action:"""
 
         print(f"[DEBUG] Model said: {repr(response)}")
 
-        # Parse response
-        text = response.strip().lower().split("\n")[0]
-        parts = text.split()
-        if len(parts) < 2:
+        # Parse response robustly:
+        # Many chat models emit explanations before/after the action.
+        # Extract the *last* action-like pattern from the full text.
+        matches = re.findall(r"(dispatch|defer|mark_low|mark_low_priority)\s+(pot_\d+)", response.lower())
+        if not matches:
             return "defer", fallback_id
-
-        verb = parts[0]
-        pot_id = parts[1].upper()
+        verb, pot_raw = matches[-1]
+        pot_id = pot_raw.upper()
 
         valid = {
             "dispatch": "dispatch",
@@ -217,6 +235,13 @@ Your action:"""
 # ─────────────────────────────────────────────
 
 load_dotenv()
+
+# Keep stdout clean for judges; HF emits a benign warning.
+warnings.filterwarnings(
+    "ignore",
+    message="`resume_download` is deprecated*",
+    category=FutureWarning,
+)
 
 _API_KEY_RAW = (
     os.getenv("HF_TOKEN")
@@ -243,6 +268,11 @@ MAX_STEPS_PER_TASK   = 45
 SUCCESS_THRESHOLD    = 0.5
 TEMPERATURE          = 0.3   # low = more deterministic decisions
 MAX_TOKENS           = 100
+
+# If set, randomize the environment seed each run to avoid identical episodes.
+# Keep unset for reproducible benchmarking.
+RANDOMIZE_EPISODE     = os.getenv("RANDOMIZE_EPISODE", "0").strip() == "1"
+EPISODE_SEED_OVERRIDE = os.getenv("EPISODE_SEED")
 
 
 # ─────────────────────────────────────────────
@@ -401,6 +431,14 @@ async def run_task(client, task_name, model, tokenizer) -> float:
     Returns final score in [0.0, 1.0].
     """
     env = PotholeRepairEnv(task_name=task_name)
+    # By default, tasks use fixed seeds (reproducible), so repeated runs look identical.
+    # For hack/demo runs, allow randomizing the seed to get different potholes/weather.
+    if RANDOMIZE_EPISODE:
+        try:
+            seed = int(EPISODE_SEED_OVERRIDE) if EPISODE_SEED_OVERRIDE else random.randint(1, 1_000_000_000)
+        except ValueError:
+            seed = random.randint(1, 1_000_000_000)
+        env.task.seed = seed
     rewards: List[float] = []
     actions_taken: List[dict] = []
     steps_taken = 0
